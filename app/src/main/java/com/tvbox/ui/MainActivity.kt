@@ -95,13 +95,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun demo(): List<Site> = listOf(
-        Site("1", "玩偶·4K", 3, "", 25, 38),
-        Site("2", "无名·4K", 3, "", 19, 94),
-        Site("3", "多多·4K", 3, "", 25, 29),
-        Site("4", "木偶·4K", 3, "", 36, 131),
-        Site("5", "双星·4K", 3, "", 30, 102),
-        Site("6", "虎斑·4K", 3, "", 25, 49),
-        Site("7", "韩剧·秒播", 3, "", 20, 94),
-        Site("8", "葵花·影视", 3, "", 20, 127)
+        Site(key = "1", name = "玩偶·4K", type = 3, api = "", eps = 25, ms = 38),
+        Site(key = "2", name = "无名·4K", type = 3, api = "", eps = 19, ms = 94),
+        Site(key = "3", name = "多多·4K", type = 3, api = "", eps = 25, ms = 29),
+        Site(key = "4", name = "木偶·4K", type = 3, api = "", eps = 36, ms = 131),
+        Site(key = "5", name = "双星·4K", type = 3, api = "", eps = 30, ms = 102),
+        Site(key = "6", name = "虎斑·4K", type = 3, api = "", eps = 25, ms = 49),
+        Site(key = "7", name = "韩剧·秒播", type = 3, api = "", eps = 20, ms = 94),
+        Site(key = "8", name = "葵花·影视", type = 3, api = "", eps = 20, ms = 127)
     )
 }
