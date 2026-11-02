@@ -209,7 +209,6 @@ fun SearchScreen(state: AppState, onOpenDetail: (Vod) -> Unit) {
             }
             LazyColumn(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 itemsIndexed(state.sites.take(5)) { gi, s ->
-                    item {
                         Column {
                             Box(
                                 Modifier.clip(RoundedCornerShape(6.dp))
@@ -235,7 +234,6 @@ fun SearchScreen(state: AppState, onOpenDetail: (Vod) -> Unit) {
                             }
                             Spacer(Modifier.height(16.dp))
                         }
-                    }
                 }
             }
         }
