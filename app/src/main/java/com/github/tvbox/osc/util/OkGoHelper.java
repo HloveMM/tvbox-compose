@@ -1,9 +1,9 @@
 package com.github.tvbox.osc.util;
 
-import java.net.Authenticator;
 import java.net.ProxySelector;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Authenticator;
 import okhttp3.Dns;
 import okhttp3.OkHttpClient;
 import okhttp3.dnsoverhttps.DnsOverHttps;

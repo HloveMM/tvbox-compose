@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.github.tvbox.osc.base.App.setCurrentActivity(this)
         setContent {
             TVBoxTheme {
                 val state = remember { AppState() }
