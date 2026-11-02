@@ -12,16 +12,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 
 /* ---------------- 首页 ---------------- */
 @Composable
@@ -63,9 +68,7 @@ fun HomeScreen(state: AppState, onPickSource: () -> Unit, onSearch: () -> Unit, 
                     .clickable { onSearch() }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("搜索影片名 / 演员 / 导演", color = Text3, fontSize = 12.5.sp)
-            }
+            ) { Text("搜索影片名 / 演员 / 导演", color = Text3, fontSize = 12.5.sp) }
         }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -78,13 +81,7 @@ fun HomeScreen(state: AppState, onPickSource: () -> Unit, onSearch: () -> Unit, 
             Box(Modifier.padding(14.dp, 14.dp, 20.dp, 0.dp)) {
                 Box(Modifier.fillMaxWidth().height(214.dp).clip(RoundedCornerShape(22.dp))) {
                     PosterArt(0, modifier = Modifier.fillMaxSize())
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xEB040508))
-                            )
-                        )
-                    )
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xEB040508)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
                         Box(
                             Modifier.clip(RoundedCornerShape(8.dp)).background(Accent.copy(alpha = .92f))
@@ -145,10 +142,7 @@ fun HomeScreen(state: AppState, onPickSource: () -> Unit, onSearch: () -> Unit, 
                     .clickable { onOpenDetail(Vod("${i}", r.first, r.second, state.site?.name ?: "", state.currentSite)) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "${i + 1}", color = if (i < 3) Accent else Text3,
-                    fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.width(20.dp)
-                )
+                Text("${i + 1}", color = if (i < 3) Accent else Text3, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.width(20.dp))
                 Spacer(Modifier.width(13.dp))
                 PosterArt(i + 1, modifier = Modifier.width(50.dp).height(68.dp))
                 Spacer(Modifier.width(13.dp))
@@ -164,15 +158,29 @@ fun HomeScreen(state: AppState, onPickSource: () -> Unit, onSearch: () -> Unit, 
     }
 }
 
-/* ---------------- 聚合搜索 ---------------- */
+/* ---------------- 聚合搜索（真实多源） ---------------- */
 @Composable
 fun SearchScreen(state: AppState, onOpenDetail: (Vod) -> Unit) {
     val palette = listOf(Color(0xFFFFB347), Color(0xFFFF6FA8), Color(0xFF5AC8FA), Color(0xFFB46BFF), Color(0xFF3DDC97))
+    var groups by remember { mutableStateOf<List<Pair<Site, List<Vod>>>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var total by remember { mutableStateOf(0) }
+
+    LaunchedEffect(state.currentSite, state.spiderUrl) {
+        if (state.sites.isEmpty()) return@LaunchedEffect
+        loading = true
+        val targets = state.sites.take(6)
+        val res = targets.mapNotNull { s ->
+            val list = runCatching { Repo.search(s, "空枪", state.spiderUrl) }.getOrDefault(emptyList())
+            if (list.isEmpty()) null else s to list
+        }
+        groups = res
+        total = res.size
+        loading = false
+    }
+
     Column(Modifier.fillMaxSize().background(Bg)) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp, 18.dp, 16.dp, 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp, 18.dp, 16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(19.dp))
                     .background(Color.White.copy(alpha = .07f)).padding(horizontal = 12.dp),
@@ -180,14 +188,10 @@ fun SearchScreen(state: AppState, onOpenDetail: (Vod) -> Unit) {
             ) { Text("空枪", color = Text1, fontSize = 13.sp) }
             Spacer(Modifier.width(8.dp))
             Text("精确", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(10.dp))
-            Text("☰", color = Text2, fontSize = 16.sp)
         }
         Row(Modifier.weight(1f)) {
             LazyColumn(Modifier.width(98.dp).padding(start = 12.dp)) {
-                item {
-                    Text("搜索(${state.sites.size}/${state.sites.size})", color = Text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
-                }
+                item { Text("搜索(${if (loading) "…" else "$total"}/${state.sites.size})", color = Text3, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp)) }
                 item {
                     Box(
                         Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(8.dp))
@@ -208,64 +212,78 @@ fun SearchScreen(state: AppState, onOpenDetail: (Vod) -> Unit) {
                 }
             }
             LazyColumn(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                itemsIndexed(state.sites.take(5)) { gi, s ->
-                        Column {
-                            Box(
-                                Modifier.clip(RoundedCornerShape(6.dp))
-                                    .background(palette[gi % palette.size].copy(alpha = .16f))
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) { Text(s.name, color = palette[gi % palette.size], fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold) }
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                                listOf("空枪" to "2026年08月19日上映", "空枪（粤语）" to "更新至 HD").forEachIndexed { k, it ->
-                                    Column(
-                                        Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                                            .background(Color.White.copy(alpha = .04f))
-                                            .clickable { onOpenDetail(Vod("$gi$k", it.first, it.second, s.name, gi)) }
-                                    ) {
-                                        PosterArt(gi + k, modifier = Modifier.fillMaxWidth().height(108.dp))
-                                        Column(Modifier.padding(7.dp)) {
-                                            Text(it.first, color = Text1, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Spacer(Modifier.height(3.dp))
-                                            Text(it.second, color = Text3, fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
+                if (loading) {
+                    item { Text("正在连接采集源…", color = Text3, fontSize = 12.sp, modifier = Modifier.padding(12.dp)) }
+                } else if (groups.isEmpty()) {
+                    item { Text("没有结果。CSP 源需要蜘蛛 jar，首次会下载引擎，稍后再试。", color = Text3, fontSize = 12.sp, modifier = Modifier.padding(12.dp)) }
+                }
+                itemsIndexed(groups) { gi, g ->
+                    Column {
+                        Box(
+                            Modifier.clip(RoundedCornerShape(6.dp))
+                                .background(palette[gi % palette.size].copy(alpha = .16f))
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) { Text(g.first.name, color = palette[gi % palette.size], fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold) }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            g.second.take(2).forEachIndexed { k, v ->
+                                Column(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                        .background(Color.White.copy(alpha = .04f))
+                                        .clickable { onOpenDetail(v) }
+                                ) {
+                                    PosterArt(gi + k, modifier = Modifier.fillMaxWidth().height(108.dp))
+                                    Column(Modifier.padding(7.dp)) {
+                                        Text(v.name, color = Text1, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Spacer(Modifier.height(3.dp))
+                                        Text(v.remarks.ifBlank { "—" }, color = Text3, fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
-                            Spacer(Modifier.height(16.dp))
+                            if (g.second.size == 1) Spacer(Modifier.weight(1f))
                         }
+                        Spacer(Modifier.height(16.dp))
+                    }
                 }
             }
         }
     }
 }
 
-/* ---------------- 详情 ---------------- */
+/* ---------------- 详情（真实线路与选集） ---------------- */
 @Composable
 fun DetailScreen(state: AppState, onPlay: () -> Unit) {
     val vod = state.vod ?: return
     val site = state.site ?: return
-    val lines = listOf("免费分享-超级无敌4K", "高清4K", "高清蓝光4K", "4K HDR", "1080P 备用")
+
+    LaunchedEffect(vod.id, site.key) {
+        state.detailLoading = true
+        state.detail = Repo.detail(site, vod, state.spiderUrl)
+        state.detailLoading = false
+        state.line = 0
+        state.ep = 0
+    }
+
+    val detail = state.detail
+    val lines = detail?.lines ?: emptyList()
+    val episodes = state.currentEpisodes
+
     LazyColumn(Modifier.fillMaxSize().background(Bg)) {
         item {
             Box(Modifier.fillMaxWidth().height(230.dp)) {
                 PosterArt(0, modifier = Modifier.fillMaxSize())
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD08090D), Bg))
-                    )
-                )
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xDD08090D), Bg))))
                 Text("‹", color = Color.White, fontSize = 26.sp, modifier = Modifier.padding(16.dp, 18.dp, 0.dp, 0.dp))
             }
         }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).offset(y = (-56).dp)) {
-                PosterArt(0, modifier = Modifier.width(104.dp).height(148.dp))
+                PosterArt(1, modifier = Modifier.width(104.dp).height(148.dp))
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.padding(top = 60.dp)) {
-                    Text(vod.name, color = Text1, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(detail?.name ?: vod.name, color = Text1, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
-                    Text("★ 9.2   2026 · 全 24 集", color = Text2, fontSize = 12.sp)
+                    Text("★ 9.2   2026 · 全 ${episodes.size} 集", color = Text2, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("科幻", "太空歌剧", "4K").forEach {
@@ -280,25 +298,19 @@ fun DetailScreen(state: AppState, onPlay: () -> Unit) {
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).offset(y = (-30).dp)) {
                 Box(
-                    Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(14.dp)).background(AccentBrush)
-                        .clickable { onPlay() },
+                    Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(14.dp)).background(AccentBrush).clickable { onPlay() },
                     contentAlignment = Alignment.Center
                 ) { Text("▶  立即播放", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                 Spacer(Modifier.width(10.dp))
                 listOf("⤓", "★").forEach {
-                    Box(
-                        Modifier.width(56.dp).height(46.dp).clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = .07f)),
-                        contentAlignment = Alignment.Center
-                    ) { Text(it, color = Text1, fontSize = 16.sp) }
+                    Box(Modifier.width(56.dp).height(46.dp).clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = .07f)), contentAlignment = Alignment.Center) {
+                        Text(it, color = Text1, fontSize = 16.sp)
+                    }
                 }
             }
         }
         item {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceAround) {
                 listOf("下载" to "⤓", "快搜" to "⌕", "Exo" to "▶", "投屏" to "⇪", "设置" to "⚙").forEach {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(it.second, color = Text2, fontSize = 17.sp)
@@ -308,53 +320,49 @@ fun DetailScreen(state: AppState, onPlay: () -> Unit) {
                 }
             }
         }
-        item {
-            Text("线路", color = Text1, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(20.dp, 14.dp, 20.dp, 8.dp))
+        if (state.detailLoading) {
+            item { Text("正在解析线路…", color = Text3, fontSize = 12.sp, modifier = Modifier.padding(20.dp)) }
         }
-        item {
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(lines) { i, l ->
-                    Box(
-                        Modifier.clip(RoundedCornerShape(11.dp))
-                            .background(if (i == state.line) AccentBrush else Brush.horizontalGradient(listOf(Color.White.copy(alpha = .05f), Color.White.copy(alpha = .05f))))
-                            .clickable { state.line = i }
-                            .padding(horizontal = 13.dp, vertical = 9.dp)
-                    ) {
-                        Text(l, color = if (i == state.line) Color.White else Text2, fontSize = 12.sp, fontWeight = if (i == state.line) FontWeight.SemiBold else FontWeight.Normal)
+        if (lines.isNotEmpty()) {
+            item { Text("线路", color = Text1, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(20.dp, 14.dp, 20.dp, 8.dp)) }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemsIndexed(lines) { i, l ->
+                        Box(
+                            Modifier.clip(RoundedCornerShape(11.dp))
+                                .background(if (i == state.line) AccentBrush else Brush.horizontalGradient(listOf(Color.White.copy(alpha = .05f), Color.White.copy(alpha = .05f))))
+                                .clickable { state.line = i; state.ep = 0 }
+                                .padding(horizontal = 13.dp, vertical = 9.dp)
+                        ) { Text(l.name, color = if (i == state.line) Color.White else Text2, fontSize = 12.sp, fontWeight = if (i == state.line) FontWeight.SemiBold else FontWeight.Normal) }
                     }
                 }
             }
         }
         item {
             Text(
-                "简介　深空探测船「彼岸号」在跃迁途中收到一段来自 40 光年外的求救信号，信号里的声音，属于舰长三年前失踪的女儿。",
+                (detail?.content?.takeIf { it.isNotBlank() } ?: "暂无简介"),
                 color = Text2, fontSize = 12.5.sp, lineHeight = 21.sp, modifier = Modifier.padding(20.dp, 16.dp, 20.dp, 0.dp)
             )
         }
         item {
             Row(Modifier.fillMaxWidth().padding(20.dp, 18.dp, 20.dp, 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("选集", color = Text1, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text("共 ${Repo.episodes(site)} 集 · ${site.name}", color = Text3, fontSize = 12.sp)
+                Text("共 ${episodes.size} 集 · ${site.name}", color = Text3, fontSize = 12.sp)
             }
         }
-        items((Repo.episodes(site) + 4) / 5) { row ->
+        items((episodes.size + 4) / 5) { row ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 repeat(5) { col ->
-                    val n = row * 5 + col + 1
-                    val total = Repo.episodes(site)
-                    if (n <= total) {
-                        val on = n - 1 == state.ep
+                    val n = row * 5 + col
+                    if (n < episodes.size) {
+                        val on = n == state.ep
                         Box(
                             Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(10.dp))
                                 .background(if (on) AccentBrush else Brush.horizontalGradient(listOf(Color.White.copy(alpha = .06f), Color.White.copy(alpha = .06f))))
-                                .clickable { state.ep = n - 1; onPlay() },
+                                .clickable { state.ep = n; onPlay() },
                             contentAlignment = Alignment.Center
-                        ) {
-                            Text("$n", color = if (on) Color.White else Text2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
+                        ) { Text("${n + 1}", color = if (on) Color.White else Text2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                    } else Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -362,45 +370,40 @@ fun DetailScreen(state: AppState, onPlay: () -> Unit) {
     }
 }
 
-/* ---------------- 播放 ---------------- */
+/* ---------------- 播放（ExoPlayer） ---------------- */
+@Composable
+fun VideoPlayer(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val player = remember(url) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(url))
+            prepare()
+            playWhenReady = true
+        }
+    }
+    DisposableEffect(url) { onDispose { player.release() } }
+    AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = modifier)
+}
+
 @Composable
 fun PlayerScreen(state: AppState) {
     val vod = state.vod ?: return
-    val lines = listOf("线路1 4K", "线路2 1080P", "线路3 备用")
+    val eps = state.currentEpisodes
+    val current = eps.getOrNull(state.ep)
+    val lines = state.detail?.lines ?: emptyList()
+
     Column(Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState())) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
-            PosterArt(0, modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x8C000000), Color.Transparent, Color(0xB3000000)))))
-            Row(Modifier.fillMaxWidth().padding(16.dp, 14.dp, 16.dp, 0.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("‹", color = Color.White, fontSize = 24.sp)
-                Spacer(Modifier.width(10.dp))
-                Text("${vod.name} · 第 ${state.ep + 1} 集", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box(
-                Modifier.align(Alignment.Center).size(62.dp).clip(CircleShape).background(Color.White.copy(alpha = .95f)),
-                contentAlignment = Alignment.Center
-            ) { Text("▶", color = Color.Black, fontSize = 22.sp) }
-            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(16.dp)) {
-                Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .25f))) {
-                    Box(Modifier.fillMaxWidth(.38f).fillMaxHeight().background(AccentBrush))
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("18:24", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
-                    Text("45:10", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+            if (current != null) {
+                VideoPlayer(current.url, Modifier.fillMaxSize())
+            } else {
+                PosterArt(0, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("暂无可播放地址", color = Color.White.copy(alpha = .8f), fontSize = 13.sp)
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceAround) {
-            listOf("弹幕" to "▤", "1080P" to "HD", "1.0×" to "◔", "投屏" to "⇪", "下载" to "⤓").forEachIndexed { i, it ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(it.second, color = if (i == 0) Accent else Text2, fontSize = 15.sp)
-                    Spacer(Modifier.height(5.dp))
-                    Text(it.first, color = if (i == 0) Accent else Text3, fontSize = 10.5.sp)
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("线路", color = Text3, fontSize = 11.sp)
             Spacer(Modifier.width(10.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -408,16 +411,16 @@ fun PlayerScreen(state: AppState) {
                     Box(
                         Modifier.clip(RoundedCornerShape(9.dp))
                             .background(if (i == state.line) Accent.copy(alpha = .16f) else Color.White.copy(alpha = .06f))
-                            .clickable { state.line = i }
+                            .clickable { state.line = i; state.ep = 0 }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) { Text(l, color = if (i == state.line) Color(0xFFFF9A86) else Text2, fontSize = 11.5.sp) }
+                    ) { Text(l.name, color = if (i == state.line) Color(0xFFFF9A86) else Text2, fontSize = 11.5.sp) }
                 }
             }
         }
         Column(Modifier.padding(20.dp)) {
-            Text("${vod.name} · 第 ${state.ep + 1} 集", color = Text1, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("${state.detail?.name ?: vod.name} · 第 ${state.ep + 1} 集", color = Text1, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text("9.2  科幻 · 2026 · 45 分钟 · 来源 ${state.site?.name ?: ""}", color = Text3, fontSize = 12.sp)
+            Text("来源 ${state.site?.name ?: ""} · ${current?.name ?: ""}", color = Text3, fontSize = 12.sp)
         }
         Spacer(Modifier.height(20.dp))
     }
@@ -430,13 +433,10 @@ fun SourcesScreen(state: AppState) {
     val filters = listOf("全部", "4K", "秒播", "P2P", "网盘")
     val list = if (state.filter == "全部") state.sites else state.sites.filter { Repo.tag(it) == state.filter }
     LazyColumn(Modifier.fillMaxSize().background(Bg)) {
-        item {
-            Text("数据源", color = Text1, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 20.dp, 20.dp, 12.dp))
-        }
+        item { Text("数据源", color = Text1, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp, 20.dp, 20.dp, 12.dp)) }
         item {
             Column(
-                Modifier.padding(horizontal = 20.dp).fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
+                Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(Brush.linearGradient(listOf(Accent.copy(alpha = .16f), Color.White.copy(alpha = .03f))))
                     .padding(16.dp)
             ) {
@@ -465,10 +465,7 @@ fun SourcesScreen(state: AppState) {
             }
         }
         itemsIndexed(list.take(40)) { i, s ->
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(s.ms)
                 Spacer(Modifier.width(11.dp))
                 Text(s.name, color = Text1, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -476,11 +473,7 @@ fun SourcesScreen(state: AppState) {
                     Text(if (s.type == 3) "CSP" else "JSON", color = Text3, fontSize = 9.5.sp)
                 }
                 Spacer(Modifier.width(10.dp))
-                Text(
-                    "${s.ms}ms",
-                    color = if (s.ms > 120) Text3 else if (s.ms > 80) WarnColor else Color(0xFF7FF0BC),
-                    fontSize = 10.5.sp
-                )
+                Text("${s.ms}ms", color = if (s.ms > 120) Text3 else if (s.ms > 80) WarnColor else Color(0xFF7FF0BC), fontSize = 10.5.sp)
             }
         }
         item { Spacer(Modifier.height(20.dp)) }
@@ -505,10 +498,7 @@ fun SourceSheet(state: AppState, onClose: () -> Unit) {
             Box(Modifier.padding(top = 8.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .2f)))
             }
-            Row(
-                Modifier.fillMaxWidth().padding(18.dp, 14.dp, 18.dp, 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(Modifier.fillMaxWidth().padding(18.dp, 14.dp, 18.dp, 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("选择采集源", color = Text1, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text("${state.sites.size} 个可用", color = Text3, fontSize = 11.sp)
             }

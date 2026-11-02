@@ -21,10 +21,18 @@ class AppState {
     var error by mutableStateOf<String?>(null)
     var sheet by mutableStateOf(false)
     var vod by mutableStateOf<Vod?>(null)
+    var detail by mutableStateOf<VodDetail?>(null)
+    var detailLoading by mutableStateOf(false)
     var line by mutableStateOf(0)
     var ep by mutableStateOf(0)
     var filter by mutableStateOf("全部")
 
     val site: Site?
         get() = sites.getOrNull(currentSite)
+
+    val spiderUrl: String
+        get() = config?.spider.orEmpty()
+
+    val currentEpisodes: List<Episode>
+        get() = detail?.lines?.getOrNull(line)?.episodes.orEmpty()
 }

@@ -1,5 +1,7 @@
 package com.tvbox.ui
 
+import com.github.catvod.crawler.Spider
+import com.github.catvod.crawler.JarLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -13,6 +15,7 @@ data class Site(
     val name: String,
     val type: Int,
     val api: String,
+    val ext: String = "",
     val eps: Int = 24,
     val ms: Int = 40
 )
@@ -21,7 +24,8 @@ data class ConfigInfo(
     val sites: List<Site>,
     val parses: Int,
     val lives: Int,
-    val sourceUrl: String
+    val sourceUrl: String,
+    val spider: String = ""
 )
 
 data class Vod(
@@ -31,6 +35,65 @@ data class Vod(
     val site: String,
     val siteIndex: Int
 )
+
+data class Episode(val name: String, val url: String)
+data class PlayLine(val name: String, val episodes: List<Episode>)
+data class VodDetail(
+    val name: String,
+    val pic: String,
+    val content: String,
+    val lines: List<PlayLine>
+)
+
+object SpiderEngine {
+    private val loader = JarLoader()
+
+    fun spider(site: Site, spiderUrl: String): Spider? = try {
+        loader.getSpider(site.key, site.api, site.ext, spiderUrl)
+    } catch (t: Throwable) {
+        null
+    }
+
+    fun callSearch(site: Site, spiderUrl: String, kw: String): List<Vod> {
+        val sp = spider(site, spiderUrl) ?: return emptyList()
+        val raw = sp.searchContent(kw, false, "1") ?: return emptyList()
+        val arr = JSONObject(raw).optJSONArray("list") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            Vod(
+                id = o.optString("vod_id"),
+                name = o.optString("vod_name"),
+                remarks = o.optString("vod_remarks"),
+                site = site.name,
+                siteIndex = 0
+            )
+        }
+    }
+
+    fun callDetail(site: Site, spiderUrl: String, id: String): VodDetail? {
+        val sp = spider(site, spiderUrl) ?: return null
+        val raw = sp.detailContent(listOf(id)) ?: return null
+        val arr = JSONObject(raw).optJSONArray("list") ?: return null
+        val o = arr.optJSONObject(0) ?: return null
+        val froms = o.optString("vod_play_from").split("$$$")
+        val urls = o.optString("vod_play_url").split("$$$")
+        val lines = ArrayList<PlayLine>()
+        for (i in froms.indices) {
+            if (i >= urls.size) break
+            val eps = urls[i].split("#").mapNotNull { seg ->
+                val idx = seg.indexOf('$')
+                if (idx <= 0) null else Episode(seg.substring(0, idx), seg.substring(idx + 1))
+            }
+            if (eps.isNotEmpty()) lines.add(PlayLine(froms[i], eps))
+        }
+        return VodDetail(
+            name = o.optString("vod_name"),
+            pic = o.optString("vod_pic"),
+            content = o.optString("vod_content").replace(Regex("<[^>]+>"), "").trim(),
+            lines = lines
+        )
+    }
+}
 
 object Repo {
     const val DEFAULT_CONFIG = "http://tvbox.xn--4kq62z5rby2qupq9ub.top/"
@@ -55,16 +118,13 @@ object Repo {
         return s.trim('·', ' ', '\u3000').ifBlank { "未命名源" }
     }
 
-    private fun tagOf(n: String): String = when {
-        n.contains("4k", true) -> "4K"
-        n.contains("秒播") -> "秒播"
-        n.contains("p2p", true) -> "P2P"
-        n.contains("网盘") -> "网盘"
-        n.contains("韩剧") -> "韩剧"
+    fun tag(site: Site): String = when {
+        site.name.contains("4k", true) -> "4K"
+        site.name.contains("秒播") -> "秒播"
+        site.name.contains("p2p", true) -> "P2P"
+        site.name.contains("网盘") -> "网盘"
         else -> "普通"
     }
-
-    fun tag(site: Site): String = tagOf(site.name)
 
     private fun stable(s: String): Int {
         var h = 0
@@ -92,6 +152,7 @@ object Repo {
                         name = nm,
                         type = o.optInt("type", 3),
                         api = o.optString("api", ""),
+                        ext = o.optString("ext", ""),
                         eps = 12 + stable(nm) % 29,
                         ms = 18 + stable(nm) % 135
                     )
@@ -102,14 +163,16 @@ object Repo {
             sites = out,
             parses = json.optJSONArray("parses")?.length() ?: 0,
             lives = json.optJSONArray("lives")?.length() ?: 0,
-            sourceUrl = url
+            sourceUrl = url,
+            spider = json.optString("spider", "")
         )
     }
 
-    /** 仅支持 0=JSON / 1=XML 采集站；CSP(type=3) 需要蜘蛛引擎，这里返回演示数据 */
-    suspend fun search(site: Site, kw: String): List<Vod> = withContext(Dispatchers.IO) {
-        if (site.type == 0 && site.api.startsWith("http")) {
-            runCatching {
+    suspend fun search(site: Site, kw: String, spiderUrl: String): List<Vod> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (site.type == 3 || site.api.startsWith("csp_")) {
+                SpiderEngine.callSearch(site, spiderUrl, kw)
+            } else if (site.api.startsWith("http")) {
                 val sep = if (site.api.contains("?")) "&" else "?"
                 val url = "${site.api}${sep}ac=videolist&wd=${java.net.URLEncoder.encode(kw, "UTF-8")}&pg=1"
                 val req = Request.Builder().url(url).header("User-Agent", "okhttp/3.15").build()
@@ -117,24 +180,15 @@ object Repo {
                 val list = JSONObject(body).optJSONArray("list") ?: return@runCatching emptyList<Vod>()
                 (0 until list.length()).map { i ->
                     val o = list.getJSONObject(i)
-                    Vod(
-                        id = o.optString("vod_id"),
-                        name = o.optString("vod_name"),
-                        remarks = o.optString("vod_remarks"),
-                        site = site.name,
-                        siteIndex = 0
-                    )
+                    Vod(o.optString("vod_id"), o.optString("vod_name"), o.optString("vod_remarks"), site.name, 0)
                 }
-            }.getOrElse { demoResults(site, kw) }
-        } else {
-            demoResults(site, kw)
-        }
+            } else emptyList()
+        }.getOrDefault(emptyList())
     }
 
-    private fun demoResults(site: Site, kw: String): List<Vod> = listOf(
-        Vod("1", kw, "HD · 2026", site.name, 0),
-        Vod("2", "$kw（粤语）", "更新至 HD", site.name, 0)
-    )
+    suspend fun detail(site: Site, vod: Vod, spiderUrl: String): VodDetail? = withContext(Dispatchers.IO) {
+        runCatching { SpiderEngine.callDetail(site, spiderUrl, vod.id) }.getOrNull()
+    }
 
     fun episodes(site: Site): Int = site.eps
 }

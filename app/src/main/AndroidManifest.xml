@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
+        android:name="com.github.tvbox.osc.base.App"
         android:allowBackup="true"
         android:label="TVBox"
         android:networkSecurityConfig="@xml/network_security_config"
